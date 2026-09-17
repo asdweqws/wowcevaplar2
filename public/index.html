@@ -59,18 +59,62 @@
             wordsDisplay.innerHTML = '';
 
             try {
-                // Doğrudan kendi Render sunucumuzun API'sine istek atıyoruz
-                const res = await fetch(`/api/solve?bolum=${encodeURIComponent(bolum)}`);
-                const data = await res.json();
+                const targetUrl = `https://wordsofwonders.net/tr/?letters=${encodeURIComponent(bolum)}`;
+                // İsteği tarayıcıdan köprüleyerek atıyoruz
+                const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
 
-                if (!res.ok || data.error) throw new Error(data.error || "Sonuç bulunamadı.");
+                const res = await fetch(proxyUrl);
+                if (!res.ok) throw new Error("Veri çekilemedi.");
+
+                const htmlText = await res.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, 'text/html');
+
+                // 1. Kelimeleri Çek
+                const words = [];
+                const wordContainer = doc.querySelector('.words');
+                if (wordContainer) {
+                    const lines = wordContainer.innerHTML.split(/<br\s*\/?>/i);
+                    lines.forEach(line => {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = line;
+                        const w = tempDiv.textContent.trim();
+                        if (w) words.push(w);
+                    });
+                }
+
+                // 2. Bulmaca Izgarasını Çek
+                const crossword = [];
+                const rows = doc.querySelectorAll('.crossword .crossword-row');
+
+                rows.forEach(row => {
+                    const letters = row.querySelectorAll('.letter');
+                    const rowCells = [];
+                    
+                    letters.forEach(letter => {
+                        const isHidden = letter.classList.contains('hidden');
+                        const val = letter.textContent.trim();
+                        
+                        if (isHidden || val === 'x' || val === '') {
+                            rowCells.push('');
+                        } else {
+                            rowCells.push(val.toUpperCase());
+                        }
+                    });
+                    
+                    if (rowCells.length > 0) crossword.push(rowCells);
+                });
+
+                if (words.length === 0 && crossword.length === 0) {
+                    throw new Error("Sonuç bulunamadı.");
+                }
 
                 // Grid Çizimi
-                if (data.crossword && data.crossword.length > 0 && data.crossword[0].length > 0) {
-                    const colCount = data.crossword[0].length;
+                if (crossword.length > 0 && crossword[0].length > 0) {
+                    const colCount = crossword[0].length;
                     gridDisplay.style.gridTemplateColumns = `repeat(${colCount}, 44px)`;
 
-                    data.crossword.forEach(row => {
+                    crossword.forEach(row => {
                         row.forEach(char => {
                             const cell = document.createElement('div');
                             if (char !== "") {
@@ -85,7 +129,7 @@
                 }
 
                 // Kelimeleri Listele
-                data.words.forEach(w => {
+                words.forEach(w => {
                     const badge = document.createElement('div');
                     badge.className = 'word-badge';
                     badge.textContent = w;
@@ -95,7 +139,7 @@
                 boardContainer.style.display = 'flex';
 
             } catch (err) {
-                error.textContent = err.message || 'Bir hata oluştu.';
+                error.textContent = err.message || 'Veri çekilemedi.';
                 error.style.display = 'block';
             } finally {
                 loading.style.display = 'none';
