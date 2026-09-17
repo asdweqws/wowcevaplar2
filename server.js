@@ -13,14 +13,29 @@ const PORT = process.env.PORT || 10000;
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/solve', async (req, res) => {
-    const letters = req.query.bolum ? req.query.bolum.trim() : '';
-    if (!letters) {
-        return res.status(400).json({ error: 'Lütfen harf veya kelime girin.' });
+    const rawInput = req.query.bolum ? req.query.bolum.trim() : '';
+    if (!rawInput) {
+        return res.status(400).json({ error: 'Lütfen bir bölüm numarası veya harf grubu girin.' });
     }
 
     try {
-        // Sitenin gerçek arama URL yapısı: ?letters=HARFLER
-        const targetUrl = `https://gameanswers.net/tr/words-of-wonders/?letters=${encodeURIComponent(letters)}`;
+        // Türkçe karakter ve temizlik işlemleri
+        let cleanInput = rawInput
+            .replace(/İ/g, 'i')
+            .replace(/I/g, 'ı')
+            .toLowerCase()
+            .replace(/[^a-z0-9ışğüçö\s-]/g, '');
+
+        let targetUrl = '';
+
+        // Eğer girdi sadece rakam ise (örn: 321)
+        if (/^\d+$/.test(cleanInput)) {
+            targetUrl = `https://gameanswers.net/tr/words-of-wonders/seviye-${cleanInput}/`;
+        } 
+        // Eğer girdi harf kümesi ise
+        else {
+            targetUrl = `https://gameanswers.net/tr/words-of-wonders/${encodeURIComponent(cleanInput)}/`;
+        }
 
         const response = await gotScraping({
             url: targetUrl,
@@ -34,18 +49,31 @@ app.get('/api/solve', async (req, res) => {
         });
 
         const $ = cheerio.load(response.body);
-
-        // 1. Kelimeleri Çek (.words span.letter)
         const words = [];
-        $('.words').each((_, wordsContainer) => {
-            const wordLines = $(wordsContainer).html().split(/<br\s*\/?>/i);
-            wordLines.forEach(line => {
-                const cleanWord = cheerio.load(line).text().replace(/\s+/g, '').trim();
-                if (cleanWord) words.push(cleanWord.toUpperCase());
-            });
+
+        // 1. Alternatif: .words span.letter yapısından kelime toplama
+        $('.words').each((_, container) => {
+            const html = $(container).html();
+            if (html) {
+                const lines = html.split(/<br\s*\/?>/i);
+                lines.forEach(line => {
+                    const word = cheerio.load(line).text().replace(/\s+/g, '').trim();
+                    if (word) words.push(word.toUpperCase());
+                });
+            }
         });
 
-        // 2. Bulmaca Izgarasını Çek (.crossword .crossword-row)
+        // 2. Alternatif: Liste/Div içi arama (eğer .words boş geldiyse)
+        if (words.length === 0) {
+            $('.entry-content ul li, .solution-words li, .groupRow li').each((_, el) => {
+                const text = $(el).text().trim();
+                if (text && text.length > 1) {
+                    words.push(text.toUpperCase());
+                }
+            });
+        }
+
+        // 3. Bulmaca Izgarasını (Crossword) Çek
         const crossword = [];
         $('.crossword .crossword-row').each((_, row) => {
             const rowCells = [];
@@ -63,14 +91,14 @@ app.get('/api/solve', async (req, res) => {
         });
 
         if (words.length === 0 && crossword.length === 0) {
-            return res.status(404).json({ error: 'Bu harflere ait bir sonuç bulunamadı.' });
+            return res.status(404).json({ error: 'Bu girdiye ait cevap bulunamadı. Lütfen harfleri kontrol edin.' });
         }
 
         res.json({ words, crossword });
 
     } catch (error) {
-        console.error('Arama hatası:', error.message);
-        res.status(500).json({ error: 'Arama yapılırken bir sunucu hatası oluştu.' });
+        console.error('Veri Çekme Hatası:', error.message);
+        res.status(500).json({ error: 'Sayfa bulunamadı veya veri çekilirken hata oluştu.' });
     }
 });
 
