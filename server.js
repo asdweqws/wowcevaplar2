@@ -16,18 +16,18 @@ app.get('/api/solve', async (req, res) => {
 
     try {
         const targetUrl = `https://wordsofwonders.net/tr/?letters=${encodeURIComponent(bolum)}`;
+        // Cloudflare IP engelini aşmak için allorigins proxy servisi üzerinden çekiyoruz
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
         
-        // Gerçek tarayıcı taklidi
-        const response = await axios.get(targetUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'tr-TR,tr;q=0.9'
-            },
+        const response = await axios.get(proxyUrl, {
             timeout: 10000
         });
 
-        const $ = cheerio.load(response.data);
+        if (!response.data || !response.data.contents) {
+            throw new Error('Veri alınamadı.');
+        }
+
+        const $ = cheerio.load(response.data.contents);
 
         // 1. Kelimeleri Çek
         const words = [];
@@ -57,10 +57,14 @@ app.get('/api/solve', async (req, res) => {
             if (rowCells.length > 0) crossword.push(rowCells);
         });
 
+        if (words.length === 0 && crossword.length === 0) {
+            return res.status(404).json({ error: 'Bu bölüme/harflere ait sonuç bulunamadı.' });
+        }
+
         res.json({ words, crossword });
 
     } catch (error) {
-        res.status(500).json({ error: 'Siteden veri çekilemedi.' });
+        res.status(500).json({ error: 'Siteden veri çekilemedi veya erişim engellendi.' });
     }
 });
 
