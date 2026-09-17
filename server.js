@@ -13,17 +13,21 @@ const PORT = process.env.PORT || 10000;
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/solve', async (req, res) => {
-    const bolum = req.query.bolum;
-    if (!bolum) {
-        return res.status(400).json({ error: 'Bölüm veya harf girin.' });
+    const letters = req.query.bolum ? req.query.bolum.trim() : '';
+    if (!letters) {
+        return res.status(400).json({ error: 'Lütfen harf veya kelime girin.' });
     }
 
     try {
-        const targetUrl = `https://wordsofwonders.net/tr/?letters=${encodeURIComponent(bolum)}`;
+        const targetUrl = 'https://gameanswers.net/tr/words-of-wonders/';
 
-        // Cloudflare tarayıcı kontrolünü geçen istek
+        // Form kutucuğundan yapılan POST arama isteğini taklit ediyoruz
         const response = await gotScraping({
             url: targetUrl,
+            method: 'POST',
+            form: {
+                letters: letters
+            },
             headerGeneratorOptions: {
                 browsers: [{ name: 'chrome', minVersion: 110 }],
                 devices: ['desktop'],
@@ -34,18 +38,17 @@ app.get('/api/solve', async (req, res) => {
 
         const $ = cheerio.load(response.body);
 
-        // 1. Kelimeleri Çek
+        // 1. Kelimeleri Çek (.words span.letter yapısı)
         const words = [];
-        const wordHtml = $('.words').html();
-        if (wordHtml) {
-            const lines = wordHtml.split(/<br\s*\/?>/i);
-            lines.forEach(line => {
-                const cleanWord = cheerio.load(line).text().trim();
-                if (cleanWord) words.push(cleanWord);
+        $('.words').each((_, wordsContainer) => {
+            const wordLines = $(wordsContainer).html().split(/<br\s*\/?>/i);
+            wordLines.forEach(line => {
+                const cleanWord = cheerio.load(line).text().replace(/\s+/g, '').trim();
+                if (cleanWord) words.push(cleanWord.toUpperCase());
             });
-        }
+        });
 
-        // 2. Izgarayı Çek
+        // 2. Izgarayı (Crossword) Çek
         const crossword = [];
         $('.crossword .crossword-row').each((_, row) => {
             const rowCells = [];
@@ -63,13 +66,14 @@ app.get('/api/solve', async (req, res) => {
         });
 
         if (words.length === 0 && crossword.length === 0) {
-            return res.status(404).json({ error: 'Sonuç bulunamadı.' });
+            return res.status(404).json({ error: 'Bu harflere ait bir sonuç bulunamadı.' });
         }
 
         res.json({ words, crossword });
 
     } catch (error) {
-        res.status(500).json({ error: 'Veri çekilemedi.' });
+        console.error('Arama hatası:', error.message);
+        res.status(500).json({ error: 'Arama yapılırken bir sunucu hatası oluştu.' });
     }
 });
 
