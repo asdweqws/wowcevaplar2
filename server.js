@@ -19,15 +19,12 @@ app.get('/api/solve', async (req, res) => {
     }
 
     try {
-        const targetUrl = 'https://gameanswers.net/tr/words-of-wonders/';
+        // Sitenin gerçek arama URL yapısı: ?letters=HARFLER
+        const targetUrl = `https://gameanswers.net/tr/words-of-wonders/?letters=${encodeURIComponent(letters)}`;
 
-        // Form kutucuğundan yapılan POST arama isteğini taklit ediyoruz
         const response = await gotScraping({
             url: targetUrl,
-            method: 'POST',
-            form: {
-                letters: letters
-            },
+            method: 'GET',
             headerGeneratorOptions: {
                 browsers: [{ name: 'chrome', minVersion: 110 }],
                 devices: ['desktop'],
@@ -38,7 +35,7 @@ app.get('/api/solve', async (req, res) => {
 
         const $ = cheerio.load(response.body);
 
-        // 1. Kelimeleri Çek (.words span.letter yapısı)
+        // 1. Kelimeleri Çek (.words span.letter)
         const words = [];
         $('.words').each((_, wordsContainer) => {
             const wordLines = $(wordsContainer).html().split(/<br\s*\/?>/i);
@@ -48,7 +45,7 @@ app.get('/api/solve', async (req, res) => {
             });
         });
 
-        // 2. Izgarayı (Crossword) Çek
+        // 2. Bulmaca Izgarasını Çek (.crossword .crossword-row)
         const crossword = [];
         $('.crossword .crossword-row').each((_, row) => {
             const rowCells = [];
