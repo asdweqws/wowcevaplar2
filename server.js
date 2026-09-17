@@ -1,6 +1,11 @@
-const express = require('express');
-const cheerio = require('cheerio');
-const path = require('path');
+import express from 'express';
+import * as cheerio from 'cheerio';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { gotScraping } from 'got-scraping';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -10,16 +15,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/solve', async (req, res) => {
     const bolum = req.query.bolum;
     if (!bolum) {
-        return res.status(400).json({ error: 'Lütfen bir bölüm numarası veya harf girin.' });
+        return res.status(400).json({ error: 'Bölüm veya harf girin.' });
     }
 
     try {
-        // Dynamic import for ES Module package
-        const { gotScraping } = await import('got-scraping');
-
         const targetUrl = `https://wordsofwonders.net/tr/?letters=${encodeURIComponent(bolum)}`;
 
-        // Gerçek bir Chrome tarayıcısının TLS parmak izini taklit eder
+        // Cloudflare tarayıcı kontrolünü geçen istek
         const response = await gotScraping({
             url: targetUrl,
             headerGeneratorOptions: {
@@ -27,13 +29,12 @@ app.get('/api/solve', async (req, res) => {
                 devices: ['desktop'],
                 locales: ['tr-TR', 'tr'],
                 operatingSystems: ['windows']
-            },
-            timeout: { request: 10000 }
+            }
         });
 
         const $ = cheerio.load(response.body);
 
-        // Kelimeleri Çek
+        // 1. Kelimeleri Çek
         const words = [];
         const wordHtml = $('.words').html();
         if (wordHtml) {
@@ -44,7 +45,7 @@ app.get('/api/solve', async (req, res) => {
             });
         }
 
-        // Bulmaca Izgarasını Çek
+        // 2. Izgarayı Çek
         const crossword = [];
         $('.crossword .crossword-row').each((_, row) => {
             const rowCells = [];
@@ -62,14 +63,13 @@ app.get('/api/solve', async (req, res) => {
         });
 
         if (words.length === 0 && crossword.length === 0) {
-            return res.status(404).json({ error: 'Bu bölüme ait sonuç bulunamadı.' });
+            return res.status(404).json({ error: 'Sonuç bulunamadı.' });
         }
 
         res.json({ words, crossword });
 
     } catch (error) {
-        console.error('Scraping hatası:', error.message);
-        res.status(500).json({ error: 'Veri çekilemedi, Cloudflare engeline takıldı.' });
+        res.status(500).json({ error: 'Veri çekilemedi.' });
     }
 });
 
